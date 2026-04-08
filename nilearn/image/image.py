@@ -1510,7 +1510,7 @@ def _apply_threshold(img_data, two_sided, cutoff_threshold):
     return img_data
 
 
-def math_img(formula, copy_header_from=None, **imgs):
+def math_img(formula: str, copy_header_from: str | None = None, **imgs):
     """Interpret a numpy based string formula using niimg in named parameters.
 
     .. nilearn_versionadded:: 0.2.3
@@ -1595,23 +1595,24 @@ def math_img(formula, copy_header_from=None, **imgs):
     is_surface = all(isinstance(x, SurfaceImage) for x in imgs.values())
 
     if is_surface:
+        imgs: dict[str, SurfaceImage]  # type: ignore[no-redef]
         first_img = next(iter(imgs.values()))
         for image in imgs.values():
             assert_polymesh_equal(first_img.mesh, image.mesh)
 
         # Computing input data as a dictionary of numpy arrays.
-        data_dict = {k: {} for k in first_img.data.parts}
+        surface_data_dict = {k: {} for k in first_img.data.parts}  # type: ignore[var-annotated]
         for key, img in imgs.items():
             for k, v in img.data.parts.items():
-                data_dict[k][key] = v
+                surface_data_dict[k][key] = v
 
         # Add a reference to numpy in the kwargs of eval
         # so that numpy functions can be called from there.
         result = {}
         try:
-            for k in data_dict:
-                data_dict[k]["np"] = np
-                result[k] = eval(formula, data_dict[k])
+            for k in surface_data_dict:
+                surface_data_dict[k]["np"] = np
+                result[k] = eval(formula, surface_data_dict[k])
         except Exception as exc:
             exc.args = (
                 "Input formula couldn't be processed, "
@@ -1635,8 +1636,7 @@ def math_img(formula, copy_header_from=None, **imgs):
 
     # Computing input data as a dictionary of numpy arrays. Keep a reference
     # niimg for building the result as a new niimg.
-    niimg = None
-    data_dict = {}
+    data_dict: dict[str, object] = {}
     for key, img in imgs.items():
         niimg = check_niimg(img)
         data_dict[key] = safe_get_data(niimg)
@@ -1655,6 +1655,18 @@ def math_img(formula, copy_header_from=None, **imgs):
 
     if copy_header_from is None:
         return new_img_like(niimg, result, niimg.affine, copy_header=False)
+    if not isinstance(copy_header_from, str):
+        raise TypeError(
+            "copy_header_from must be a string corresponding to one of the "
+            f"image variable names, got {type(copy_header_from).__name__}."
+        )
+    if copy_header_from not in imgs:
+        raise ValueError(
+            "copy_header_from must be the name of one of the input images. "
+            f"Got '{copy_header_from}'. Available images are: "
+            f"{', '.join(imgs.keys())}."
+        )
+
     niimg = check_niimg(imgs[copy_header_from])
     # only copy the header if the result and the input image to copy the
     # header from have the same shape
